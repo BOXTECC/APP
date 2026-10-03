@@ -450,6 +450,7 @@ let cfgTipoPer='gasto',cfgTipoNeg='gasto';
 let periodoPresupuesto='mensual';
 
 const PERIODOS={mensual:1,quincenal:2,semanal:4.345,diario:30.44,anual:1/12};
+const CAT_AJUSTE='Ajuste de saldo';
 function aMensual(m,p){return m*(PERIODOS[p]||1)}
 
 function hoyLocal(d){d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
@@ -700,8 +701,21 @@ async function agregarCuenta(){
 }
 
 // ============ CÁLCULOS ============
+async function ajustarSaldo(id){
+  const c=cuentas.find(x=>x.id===id);if(!c)return;
+  const actual=saldoCuenta(id);
+  const ayuda=c.tipo==='credito'?'\n(Tarjeta de crédito: usa NEGATIVO lo que debes, ej. -3500)':'';
+  const r=prompt('Saldo real de "'+c.nombre+'".\nEn la app hoy: '+formatoDinero(actual)+ayuda+'\n\nEscribe el saldo correcto:',actual.toFixed(2));
+  if(r===null)return;
+  const nuevo=parseFloat(String(r).replace(/[$,\s]/g,''));
+  if(isNaN(nuevo))return alert('Número inválido');
+  const diff=Math.round((nuevo-actual)*100)/100;
+  if(Math.abs(diff)<0.005)return alert('El saldo ya coincide');
+  const mv={id:Date.now(),tipo:diff>0?'ingreso':'gasto',desc:'Ajuste de saldo',monto:Math.abs(diff),fecha:hoyLocal(),cuentaId:id,categoria:CAT_AJUSTE,ambito:'personal',moneda:'MXN',codigoBarras:'',meses:0,tcc:'',departamento:''};
+  if(await subirMovimiento(mv))alert('✅ Ajuste de '+(diff>0?'+':'-')+formatoDinero(Math.abs(diff))+' registrado');
+}
 function saldoCuenta(id){const c=cuentas.find(x=>x.id===id);if(!c)return 0;let s=c.saldoInicial;movimientos.filter(m=>m.cuentaId===id).forEach(m=>{s+=(m.tipo==='ingreso'?m.monto:-m.monto)});return s}
-function filtrarMes(l,a,m){return l.filter(x=>{const f=new Date(x.fecha+'T12:00:00');return f.getMonth()===m&&f.getFullYear()===a})}
+function filtrarMes(l,a,m){return l.filter(x=>{if(x.categoria===CAT_AJUSTE)return false;const f=new Date(x.fecha+'T12:00:00');return f.getMonth()===m&&f.getFullYear()===a})}
 function calcularTotales(l){const i=l.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+m.monto,0);const g=l.filter(m=>m.tipo==='gasto').reduce((s,m)=>s+m.monto,0);return{ingresos:i,gastos:g,balance:i-g}}
 
 function rangoPeriodo(periodo){
@@ -803,8 +817,8 @@ function renderMovimientos(){
   let html='';
   fechas.forEach(f=>{
     const movs=grupos[f].sort((a,b)=>b.id-a.id);
-    const totIng=movs.filter(m=>m.tipo==='ingreso').reduce((s,m)=>s+m.monto,0);
-    const totGas=movs.filter(m=>m.tipo==='gasto').reduce((s,m)=>s+m.monto,0);
+    const totIng=movs.filter(m=>m.tipo==='ingreso'&&m.categoria!==CAT_AJUSTE).reduce((s,m)=>s+m.monto,0);
+    const totGas=movs.filter(m=>m.tipo==='gasto'&&m.categoria!==CAT_AJUSTE).reduce((s,m)=>s+m.monto,0);
     const fechaObj=new Date(f+'T12:00:00');
     let etiqueta;
     if(f===hoy)etiqueta='HOY';
@@ -821,9 +835,10 @@ function renderMovimientos(){
       const bTC=cta&&cta.tipo==='credito'?'<span class="badge">TC</span>':'';
       const bA=m.ambito==='negocio'?'<span class="badge negocio">💼</span>':'<span class="badge personal">🏠</span>';
       const bM=m.moneda==='USD'?'<span class="badge usd">USD</span>':'';
+      const bAj=m.categoria===CAT_AJUSTE?'<span class="badge" style="background:#ede9fe;color:#5b21b6">⚖️ Ajuste</span>':'';
       const bMe=m.meses>0?'<span class="badge meses">'+m.meses+' meses · '+escapeHtml(m.tcc)+'</span>':'';
       const bC=m.codigoBarras?'<span class="badge">📊 '+escapeHtml(m.codigoBarras)+'</span>':'';
-      return '<div class="movimiento"><div class="mov-info"><div class="mov-desc">'+escapeHtml(m.desc)+'</div><div class="mov-sub">'+bA+bM+bTC+bMe+bC+escapeHtml(nc)+' · '+escapeHtml(m.categoria)+'</div></div><div class="mov-monto '+col+'">'+sg+formatoDinero(m.monto,m.moneda)+'</div><button class="mov-del" onclick="eliminarMovimiento('+m.id+')">×</button></div>';
+      return '<div class="movimiento"><div class="mov-info"><div class="mov-desc">'+escapeHtml(m.desc)+'</div><div class="mov-sub">'+bAj+bA+bM+bTC+bMe+bC+escapeHtml(nc)+' · '+escapeHtml(m.categoria)+'</div></div><div class="mov-monto '+col+'">'+sg+formatoDinero(m.monto,m.moneda)+'</div><button class="mov-del" onclick="eliminarMovimiento('+m.id+')">×</button></div>';
     }).join('');
   });
   cont.innerHTML=html;
@@ -843,7 +858,7 @@ function renderCuentas(){
     let d=c.tipo==='credito'?'Corte: día '+(c.diaCorte||'—')+' · Pago: día '+(c.diaPago||'—'):c.tipo==='debito'?'Tarjeta de débito':'Efectivo';
     let ul='';
     if(c.tipo==='credito'&&c.limite){const u=Math.max(0,-s);const p=Math.min(100,(u/c.limite)*100);ul='<div class="detalles">Usado: '+formatoDinero(u)+' / '+formatoDinero(c.limite)+' ('+p.toFixed(1)+'%)</div>'}
-    return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(c.nombre)+'</div><div class="detalles">'+d+'</div>'+ul+'</div><div style="text-align:right"><div class="mov-monto '+col+'">'+formatoDinero(s)+'</div></div></div>';
+    return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(c.nombre)+'</div><div class="detalles">'+d+'</div>'+ul+'</div><div style="text-align:right"><div class="mov-monto '+col+'">'+formatoDinero(s)+'</div><button class="mini gris" style="margin-top:6px" onclick="ajustarSaldo('+c.id+')">⚖️ Ajustar saldo</button></div></div>';
   }).join('');
 }
 function renderResumenHeader(){
