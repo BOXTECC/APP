@@ -701,6 +701,18 @@ async function agregarCuenta(){
 }
 
 // ============ CÁLCULOS ============
+async function eliminarCuenta(id){
+  const c=cuentas.find(x=>x.id===id);if(!c)return;
+  const n=movimientos.filter(m=>m.cuentaId===id).length;
+  const msg='¿Eliminar la cuenta "'+c.nombre+'"?'+(n>0?'\n\nTiene '+n+' movimiento(s) que se quedarán como "Cuenta eliminada" y dejarán de contar en los saldos.':'')+'\n\nNo se puede deshacer.';
+  if(!confirm(msg))return;
+  setSync('loading','Eliminando...');
+  const r=await postJSON({action:'deleteCuenta',id});
+  if(r.error){setSync('error','🔴 '+r.error);return alert('No se pudo eliminar: '+r.error)}
+  setSync('ok','🟢 Sincronizado');
+  cuentas=cuentas.filter(x=>x.id!==id);
+  renderTodo();alert('Cuenta eliminada: '+c.nombre);
+}
 async function ajustarSaldo(id){
   const c=cuentas.find(x=>x.id===id);if(!c)return;
   const actual=saldoCuenta(id);
@@ -858,7 +870,7 @@ function renderCuentas(){
     let d=c.tipo==='credito'?'Corte: día '+(c.diaCorte||'—')+' · Pago: día '+(c.diaPago||'—'):c.tipo==='debito'?'Tarjeta de débito':'Efectivo';
     let ul='';
     if(c.tipo==='credito'&&c.limite){const u=Math.max(0,-s);const p=Math.min(100,(u/c.limite)*100);ul='<div class="detalles">Usado: '+formatoDinero(u)+' / '+formatoDinero(c.limite)+' ('+p.toFixed(1)+'%)</div>'}
-    return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(c.nombre)+'</div><div class="detalles">'+d+'</div>'+ul+'</div><div style="text-align:right"><div class="mov-monto '+col+'">'+formatoDinero(s)+'</div><button class="mini gris" style="margin-top:6px" onclick="ajustarSaldo('+c.id+')">⚖️ Ajustar saldo</button></div></div>';
+    return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(c.nombre)+'</div><div class="detalles">'+d+'</div>'+ul+'</div><div style="text-align:right"><div class="mov-monto '+col+'">'+formatoDinero(s)+'</div><div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px"><button class="mini gris" onclick="ajustarSaldo('+c.id+')">⚖️ Ajustar saldo</button><button class="mini gris" style="color:#dc2626" onclick="eliminarCuenta('+c.id+')">🗑️</button></div></div></div>';
   }).join('');
 }
 function renderResumenHeader(){
@@ -1036,17 +1048,26 @@ async function eliminarCat(amb,t,n){
 function renderPlan(){
   // Presupuestos personales
   const pp=document.getElementById('lista-presupuesto-personal');
-  pp.innerHTML=presupuestos.personal.length===0?'<div class="vacio" style="padding:12px">Sin presupuesto</div>':presupuestos.personal.map(p=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarPresupuesto(\'personal\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
+  pp.innerHTML=presupuestos.personal.length===0?'<div class="vacio" style="padding:12px">Sin presupuesto</div>':presupuestos.personal.map((p,ix)=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini gris" style="padding:4px 10px" onclick="editarPlan(\'pres\',\'personal\','+ix+')">✏️</button> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarPresupuesto(\'personal\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
   // Plan negocio
   const pn=document.getElementById('lista-presupuesto-negocio');
-  pn.innerHTML=presupuestos.negocio.length===0?'<div class="vacio" style="padding:12px">Sin plan de gastos</div>':presupuestos.negocio.map(p=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarPresupuesto(\'negocio\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
+  pn.innerHTML=presupuestos.negocio.length===0?'<div class="vacio" style="padding:12px">Sin plan de gastos</div>':presupuestos.negocio.map((p,ix)=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini gris" style="padding:4px 10px" onclick="editarPlan(\'pres\',\'negocio\','+ix+')">✏️</button> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarPresupuesto(\'negocio\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
   // Metas de ingreso
   const mp=document.getElementById('lista-meta-personal');
-  if(mp)mp.innerHTML=metasIngreso.personal.length===0?'<div class="vacio" style="padding:12px">Sin metas de ingreso</div>':metasIngreso.personal.map(p=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarMeta(\'personal\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
+  if(mp)mp.innerHTML=metasIngreso.personal.length===0?'<div class="vacio" style="padding:12px">Sin metas de ingreso</div>':metasIngreso.personal.map((p,ix)=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini gris" style="padding:4px 10px" onclick="editarPlan(\'meta\',\'personal\','+ix+')">✏️</button> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarMeta(\'personal\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
   const mn=document.getElementById('lista-meta-negocio');
-  if(mn)mn.innerHTML=metasIngreso.negocio.length===0?'<div class="vacio" style="padding:12px">Sin metas de ingreso</div>':metasIngreso.negocio.map(p=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarMeta(\'negocio\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
+  if(mn)mn.innerHTML=metasIngreso.negocio.length===0?'<div class="vacio" style="padding:12px">Sin metas de ingreso</div>':metasIngreso.negocio.map((p,ix)=>{const m=aMensual(p.monto,p.periodo);const e=p.periodo.charAt(0).toUpperCase()+p.periodo.slice(1);return '<div class="tabla-cuenta"><div><div class="nombre">'+escapeHtml(p.categoria)+'</div><div class="detalles">'+e+' · equivale a '+formatoDinero(m)+'/mes</div></div><div style="text-align:right"><b>'+formatoDinero(p.monto)+'</b> <button class="mini gris" style="padding:4px 10px" onclick="editarPlan(\'meta\',\'negocio\','+ix+')">✏️</button> <button class="mini" style="background:none;color:#dc2626;padding:4px 8px" onclick="eliminarMeta(\'negocio\',\''+escapeHtml(p.categoria)+'\')">×</button></div></div>'}).join('');
 }
 
+function editarPlan(tipo,amb,ix){
+  const it=(tipo==='meta'?metasIngreso:presupuestos)[amb][ix];if(!it)return;
+  const pre=tipo==='meta'?(amb==='negocio'?'mn':'mp'):(amb==='negocio'?'pn':'pp');
+  document.getElementById(pre+'-cat').value=it.categoria;
+  document.getElementById(pre+'-periodo').value=it.periodo;
+  const m=document.getElementById(pre+'-monto');m.value=it.monto;
+  m.scrollIntoView({behavior:'smooth',block:'center'});m.focus();m.select();
+  toast('Cambia el monto o el periodo y pulsa el botón de abajo');
+}
 // ============ AGREGAR PRESUPUESTO (CREAR O ACTUALIZAR) ============
 async function agregarPresupuesto(amb){
   const en=amb==='negocio';
